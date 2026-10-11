@@ -1,0 +1,10 @@
+{
+  "id": "token-receipt",
+  "name": "Token Receipt",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.7",
+  "description": "Turn a day of Claude Code and WorkBuddy token usage into a shop receipt: tokens by model, cache reads and writes, and the cost at API prices. Copy it as an image or save it as a PNG. Reads local session logs only.",
+  "author": "MatsuriMW",
+  "authorUrl": "https://github.com/MatsuriMW",
+  "isDesktopOnly": true
+}

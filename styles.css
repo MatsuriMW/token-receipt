@@ -1,0 +1,66 @@
+.token-receipt-view {
+	display: flex;
+	flex-direction: column;
+	padding: 0;
+}
+
+.token-receipt-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.token-receipt-bar .token-receipt-spacer {
+	flex: 1;
+}
+
+.token-receipt-bar .token-receipt-date {
+	height: 26px;
+	padding: 0 6px;
+	font-size: var(--font-ui-small);
+	font-variant-numeric: tabular-nums;
+}
+
+.token-receipt-stage {
+	flex: 1;
+	overflow: auto;
+	padding: 12px;
+	text-align: center;
+}
+
+.token-receipt-stage svg {
+	max-width: 100%;
+	height: auto;
+}
+
+.token-receipt-hint {
+	padding: 40px 12px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.token-receipt-prices {
+	border-top: none;
+	padding-top: 0;
+}
+
+.token-receipt-prices .setting-item-info {
+	display: none;
+}
+
+.token-receipt-prices .setting-item-control,
+.token-receipt-prices textarea {
+	width: 100%;
+}
+
+.token-receipt-prices textarea {
+	height: 260px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+.token-receipt-prices textarea.is-invalid {
+	border-color: var(--text-error);
+}
