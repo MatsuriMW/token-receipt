@@ -75,10 +75,10 @@ const I18N = {
 		resets: "重置",
 		total: "合计 TOKEN", apiAt: "API 折算", table: "桌号", seat: "餐位",
 		window: (min, name) => (min === 300 ? "5 小时额度" : min === 10080 ? "周额度" : min === 43200 ? "月额度" : min ? `${Math.round(min / 1440)} 天额度` : `${name || "额度"} `) + "已用",
-		viaMagpie: "以上百分比是 Magpie 盯的那个账号的", balance: "余额", left: "还剩",
+		balance: "余额", left: "还剩",
 		sMagpie: ["Magpie 目录", "Magpie 的配置目录。有的话，小票会加上它记的额度百分比、账户余额变化和经它网关转发的请求；目录不存在就什么都不加。"],
 		scenes: { printer: "打印机出纸", desk: "木桌", cork: "软木板", tape: "手账胶带", clip: "账单夹板", plain: "纯净" },
-		saveSvg: "存成动画 SVG 放进库里", replay: "重放入场动效", zoom: "点一下放大看（会存成图片，用图片查看器打开）",
+		saveSvg: "存成动画 SVG 放进库里", replay: "重放入场动效",
 		note: "金额按 API 标价折算，订阅用户并非实付",
 		noteUnpriced: "标「—」的模型不在价目表里，没有计入金额",
 		thanks: "谢谢惠顾 · THANK YOU",
@@ -113,10 +113,10 @@ const I18N = {
 		resets: "resets",
 		total: "TOTAL TOKENS", apiAt: "At API rates", table: "Table", seat: "Seat",
 		window: (min, name) => (min === 300 ? "5-hour limit" : min === 10080 ? "Weekly limit" : min === 43200 ? "Monthly limit" : min ? `${Math.round(min / 1440)}-day limit` : name || "Limit") + " used",
-		viaMagpie: "Percentages above are for the account Magpie tracks", balance: "balance", left: "left",
+		balance: "balance", left: "left",
 		sMagpie: ["Magpie folder", "Magpie's config folder. When it exists, the receipt adds the limit percentages, balance changes and gateway requests Magpie has recorded. Nothing is added when the folder is missing."],
 		scenes: { printer: "Thermal printer", desk: "Wooden desk", cork: "Cork board", tape: "Notebook and tape", clip: "Clipboard", plain: "Plain" },
-		saveSvg: "Save as animated SVG in the vault", replay: "Replay the entrance", zoom: "Click to enlarge (saves the image and opens it in the image viewer)",
+		saveSvg: "Save as animated SVG in the vault", replay: "Replay the entrance",
 		note: "Amounts are API list prices, not what a plan costs",
 		noteUnpriced: "Models marked — are not in the price table",
 		thanks: "THANK YOU · COME AGAIN",
@@ -730,10 +730,6 @@ function buildPaper(sum, opt) {
 				text(xItem, `${T.resets} ${at.join(" · ")}`, { size: 11 });
 			}
 		}
-		if (s.id !== "magpie" && s.quota.some((q) => q.magpie)) {
-			y += LH - 3;
-			text(xItem, T.viaMagpie, { size: 10.5, dim: true });
-		}
 		// 账户余额当天花掉多少
 		for (const e of s.extras) {
 			y += 4;
@@ -1149,7 +1145,7 @@ class ReceiptView extends ItemView {
 		btn("image-down", T.save, () => this.plugin.exportImage(this.date));
 		btn("clapperboard", T.saveSvg, () => this.plugin.exportSvg(this.date));
 
-		this.stage = root.createDiv({ cls: "token-receipt-stage", attr: { "aria-label": T.zoom } });
+		this.stage = root.createDiv("token-receipt-stage");
 		this.stage.addEventListener("click", (e) => {
 			if (e.target.closest("svg")) this.plugin.openInViewer(this.date);
 		});
