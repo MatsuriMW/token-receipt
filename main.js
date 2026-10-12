@@ -5,6 +5,8 @@
 //                    同一条回复会写成好几行，按 message.id + requestId 去重
 //     · Codex：~/.codex/sessions（和同级的 archived_sessions）下的 rollout-*.jsonl，取 token_count 事件里的累计值，逐条相减
 //     · WorkBuddy：~/.workbuddy/projects 下的 *.jsonl，取每次请求的 providerData.rawUsage
+//     · Magpie（可选）：~/.config/magpie 下的 usage.jsonl（经它网关转发的请求，已经直接读的三家跳过）、
+//                    quota-history.json（各家额度的剩余百分比）、balance-history.json（账户余额），有就加上，没有就不加
 //   金额：Claude 和 Codex 按 API 标价折算（订阅用户并非实付），价目表在设置里可改；WorkBuddy 只列 token
 //   额度：Claude 的会话记录里有「额度用满」的提示和重置时间，Codex 的记录里有额度已用百分比，都印在各自那一栏
 //   桌号 / 餐位：小票上印本机的局域网 IP 和系统版本（从系统直接读，不联网），设置里可以关
@@ -47,6 +49,7 @@ const DEFAULT_SETTINGS = {
 	claudeDir: "~/.claude/projects",
 	codexDir: "~/.codex/sessions",
 	workbuddyDir: "~/.workbuddy/projects",
+	magpieDir: "~/.config/magpie",
 	title: "",
 	language: "auto",
 	scene: "printer",
@@ -71,7 +74,9 @@ const I18N = {
 		limits: { five_hour: "5 小时额度用满", seven_day: "周额度用满", other: "额度用满" },
 		resets: "重置",
 		total: "合计 TOKEN", apiAt: "API 折算", table: "桌号", seat: "餐位",
-		window: (min) => (min === 300 ? "5 小时额度" : min === 10080 ? "周额度" : min === 43200 ? "月额度" : `${Math.round(min / 1440)} 天额度`) + "已用",
+		window: (min, name) => (min === 300 ? "5 小时额度" : min === 10080 ? "周额度" : min === 43200 ? "月额度" : min ? `${Math.round(min / 1440)} 天额度` : `${name || "额度"} `) + "已用",
+		viaMagpie: "以上百分比是 Magpie 盯的那个账号的", balance: "余额", left: "还剩",
+		sMagpie: ["Magpie 目录", "Magpie 的配置目录。有的话，小票会加上它记的额度百分比、账户余额变化和经它网关转发的请求；目录不存在就什么都不加。"],
 		scenes: { printer: "打印机出纸", desk: "木桌", cork: "软木板", tape: "手账胶带", clip: "账单夹板", plain: "纯净" },
 		saveSvg: "存成动画 SVG 放进库里", replay: "重放入场动效", zoom: "点一下放大看（会存成图片，用图片查看器打开）",
 		note: "金额按 API 标价折算，订阅用户并非实付",
@@ -107,7 +112,9 @@ const I18N = {
 		limits: { five_hour: "5-hour limit hit", seven_day: "Weekly limit hit", other: "Usage limit hit" },
 		resets: "resets",
 		total: "TOTAL TOKENS", apiAt: "At API rates", table: "Table", seat: "Seat",
-		window: (min) => (min === 300 ? "5-hour limit" : min === 10080 ? "Weekly limit" : min === 43200 ? "Monthly limit" : `${Math.round(min / 1440)}-day limit`) + " used",
+		window: (min, name) => (min === 300 ? "5-hour limit" : min === 10080 ? "Weekly limit" : min === 43200 ? "Monthly limit" : min ? `${Math.round(min / 1440)}-day limit` : name || "Limit") + " used",
+		viaMagpie: "Percentages above are for the account Magpie tracks", balance: "balance", left: "left",
+		sMagpie: ["Magpie folder", "Magpie's config folder. When it exists, the receipt adds the limit percentages, balance changes and gateway requests Magpie has recorded. Nothing is added when the folder is missing."],
 		scenes: { printer: "Thermal printer", desk: "Wooden desk", cork: "Cork board", tape: "Notebook and tape", clip: "Clipboard", plain: "Plain" },
 		saveSvg: "Save as animated SVG in the vault", replay: "Replay the entrance", zoom: "Click to enlarge (saves the image and opens it in the image viewer)",
 		note: "Amounts are API list prices, not what a plan costs",
@@ -281,6 +288,89 @@ function codexParser() {
 	};
 }
 
+// Magpie 网关转发的请求。Claude Code、Codex、WorkBuddy 自己的记录已经直接读了，这三家走网关的请求跳过，免得算两遍
+const MAGPIE_DIRECT = new Set(["claude", "claude-code", "codex", "workbuddy", "codebuddy"]);
+
+function parseMagpieLine(line) {
+	let d;
+	try { d = JSON.parse(line); } catch (e) { return null; }
+	if (!d || !d.t || MAGPIE_DIRECT.has(d.agent) || d.status >= 400) return null;
+	const t = Date.parse(d.t);
+	if (!t) return null;
+	return {
+		t,
+		key: d.route_id ? "magpie|" + d.route_id : null,
+		sid: d.session || d.agent || "",
+		model: d.served || d.model || "unknown",
+		in: d.in || 0,
+		read: d.cache_read || 0,
+		out: d.out || 0,
+	};
+}
+
+async function readJson(file) {
+	try { return JSON.parse(await fs.promises.readFile(file, "utf8")); } catch (e) { return null; }
+}
+
+// Magpie 隔一阵记一次各家额度还剩百分之几、账户余额还有多少。取这一天里的采样：
+//   额度：同一个窗口（重置时间相同，差几分钟也算同一个）只留最后一次采样
+//   余额：把这一天里每次减少的量加起来，充值不算
+async function magpieExtras(dir, date) {
+	const start = date.getTime(), end = start + DAY;
+	const out = { quota: {}, balances: [] };
+	if (!dir) return out;
+	const [hist, bal, now] = await Promise.all(["quota-history.json", "balance-history.json", "quotas.json"].map((f) => readJson(path.join(dir, f))));
+	const names = {}, symbols = {};
+	for (const [k, v] of Object.entries(now || {})) {
+		const p = k.split("/")[0], q = (v && v.quota) || {};
+		if (q.name) names[p] = q.name;
+		const m = typeof q.balance === "string" && q.balance.match(/^[^\d-]+/);
+		if (m) symbols[p] = m[0].trim();
+	}
+	for (const [k, wins] of Object.entries(hist || {})) {
+		const p = k.split("|")[0];
+		for (const [name, samples] of Object.entries(wins || {})) {
+			const inst = new Map();
+			let first = null, last = null;
+			for (const s of samples || []) {
+				const at = Date.parse(s.at);
+				if (!(at >= start && at < end) || typeof s.left !== "number") continue;
+				if (first == null) first = s.left;
+				last = s.left;
+				const r = s.resetsAt ? Date.parse(s.resetsAt) : 0;
+				inst.set(r ? Math.round(r / 600000) : 0, { at, used: 100 - s.left, resetsAt: r });
+			}
+			// 没有重置时间的采样是「这个窗口还没开始」，有别的窗口时不用它
+			if (inst.size > 1) inst.delete(0);
+			if (!inst.size) continue;
+			const m = name.match(/^(\d+)\s*(hour|day)/i);
+			(out.quota[p] = out.quota[p] || []).push({
+				minutes: m ? Number(m[1]) * (m[2].toLowerCase() === "hour" ? 60 : 1440) : 0,
+				name,
+				provider: names[p] || p,
+				list: [...inst.values()].sort((a, b) => a.at - b.at),
+				changed: first !== last,
+				magpie: true,
+			});
+		}
+	}
+	for (const [k, samples] of Object.entries(bal || {})) {
+		const p = k.split("|")[0];
+		let prev = null, spent = 0, left = null;
+		for (const s of samples || []) {
+			const at = Date.parse(s.at);
+			if (!(at < end) || typeof s.amount !== "number") continue;
+			if (at >= start) {
+				if (prev != null && s.amount < prev) spent += prev - s.amount;
+				left = s.amount;
+			}
+			prev = s.amount;
+		}
+		if (spent > 0.004) out.balances.push({ name: names[p] || p, symbol: symbols[p] || "", spent, left });
+	}
+	return out;
+}
+
 // 按文件的修改时间和大小缓存解析结果；某一天的账只可能在「那天 0 点之后还改过」的文件里
 class Ledger {
 	constructor() {
@@ -292,21 +382,34 @@ class Ledger {
 		for (const dir of dirs) await walk(expand(dir), all);
 		const out = [];
 		for (const f of all) {
-			if (f.mtimeMs < since) continue;
-			let c = this.cache.get(f.file);
-			if (!c || c.mtimeMs !== f.mtimeMs || c.size !== f.size) {
-				const rows = [];
-				const parse = makeParser();
-				await eachLine(f.file, (line) => {
-					const r = parse(line);
-					if (r) rows.push(r);
-				});
-				c = { mtimeMs: f.mtimeMs, size: f.size, rows };
-				this.cache.set(f.file, c);
-			}
-			out.push(c.rows);
+			if (f.mtimeMs >= since) out.push(await this.parse(f, makeParser));
 		}
 		return out;
+	}
+
+	async parse(f, makeParser) {
+		let c = this.cache.get(f.file);
+		if (!c || c.mtimeMs !== f.mtimeMs || c.size !== f.size) {
+			const rows = [];
+			const parse = makeParser();
+			await eachLine(f.file, (line) => {
+				const r = parse(line);
+				if (r) rows.push(r);
+			});
+			c = { mtimeMs: f.mtimeMs, size: f.size, rows };
+			this.cache.set(f.file, c);
+		}
+		return c.rows;
+	}
+
+	// 单独一个文件（Magpie 的 usage.jsonl），不存在就当没有
+	async file(file, makeParser) {
+		try {
+			const st = await fs.promises.stat(file);
+			return [await this.parse({ file, mtimeMs: st.mtimeMs, size: st.size }, makeParser)];
+		} catch (e) {
+			return [];
+		}
 	}
 
 	async day(date, settings) {
@@ -315,12 +418,15 @@ class Ledger {
 		const codexDirs = [settings.codexDir];
 		const cd = expand(settings.codexDir).replace(/\/+$/, "");
 		if (path.basename(cd) === "sessions") codexDirs.push(path.join(path.dirname(cd), "archived_sessions"));
-		const [claude, codex, wb] = await Promise.all([
+		const mdir = settings.magpieDir ? expand(settings.magpieDir) : "";
+		const [claude, codex, wb, magpie, extras] = await Promise.all([
 			this.rows([settings.claudeDir], () => parseClaudeLine, start),
 			this.rows(codexDirs, codexParser, start),
 			this.rows([settings.workbuddyDir], () => parseWorkBuddyLine, start),
+			mdir ? this.file(path.join(mdir, "usage.jsonl"), () => parseMagpieLine) : [],
+			magpieExtras(mdir, date),
 		]);
-		return summarize(date, { claude, codex, wb }, settings.prices);
+		return summarize(date, { claude, codex, wb, magpie }, settings.prices, extras);
 	}
 }
 
@@ -365,10 +471,11 @@ const LINE_ORDER = {
 	claude: ["input", "output", "read", "write5", "write1h"],
 	codex: ["input", "read", "output"],
 	wb: ["input", "hit", "output"],
+	magpie: ["input", "read", "output"],
 };
 
 function newSection(id, name, priced) {
-	return { id, name, priced, models: new Map(), sids: new Set(), limits: [], quota: [], sessions: 0, requests: 0, tokens: 0, cost: 0, unpriced: false };
+	return { id, name, priced, models: new Map(), sids: new Set(), limits: [], quota: [], extras: [], sessions: 0, requests: 0, tokens: 0, cost: 0, unpriced: false };
 }
 
 // parts：[明细的名字, token 数, 每个 token 多少美元]
@@ -403,11 +510,11 @@ function finish(sec) {
 	sec.models = models;
 	sec.sessions = sec.sids.size;
 	delete sec.sids;
-	sec.shown = models.length > 0 || sec.limits.length > 0 || sec.quota.length > 0;
+	sec.shown = models.length > 0 || sec.limits.length > 0 || sec.quota.length > 0 || sec.extras.length > 0;
 	return sec;
 }
 
-function summarize(date, files, prices) {
+function summarize(date, files, prices, magpie) {
 	const start = date.getTime();
 	const M = 1e6;
 
@@ -450,14 +557,37 @@ function summarize(date, files, prices) {
 			["output", r.out, rate(p && p.out)],
 		]);
 	}
-	if (latest) codex.quota = latest.quota;
+	if (latest) codex.quota = latest.quota.map((q) => ({ minutes: q.minutes, list: [{ used: q.used, resetsAt: q.resetsAt }] }));
 
 	const wb = newSection("wb", "WORKBUDDY", false);
 	for (const r of pick(files.wb || [], start)) {
 		addRow(wb, r, r.name || r.model, false, [["input", r.in, 0], ["hit", r.hit, 0], ["output", r.out, 0]]);
 	}
 
-	const sections = [finish(claude), finish(codex), finish(wb)];
+	const mg = newSection("magpie", "MAGPIE", true);
+	for (const r of pick(files.magpie || [], start)) {
+		const p = priceOf(r.model, prices);
+		const rate = (v) => (p ? v / M : 0);
+		addRow(mg, r, r.model, !!p, [
+			["input", r.in, rate(p && p.in)],
+			["read", r.read, rate(p && (p.read != null ? p.read : p.in * 0.1))],
+			["output", r.out, rate(p && p.out)],
+		]);
+	}
+	// Magpie 记的额度：有自己那一栏的（当天用过、记录里又没带百分比）印在那一栏；别家的只在当天有变化时印在 Magpie 这一栏
+	const own = { claude, codex, workbuddy: wb, "workbuddy-ai": wb };
+	for (const [p, list] of Object.entries((magpie && magpie.quota) || {})) {
+		const sec = own[p];
+		if (sec) {
+			// 积分这类不按时间重置的额度，当天没变化就不印
+			if (sec.models.size && !sec.quota.length) sec.quota = list.filter((q) => q.minutes || q.changed);
+		} else {
+			for (const q of list) if (q.changed) mg.quota.push(Object.assign({ label: q.provider }, q));
+		}
+	}
+	mg.extras = (magpie && magpie.balances) || [];
+
+	const sections = [finish(claude), finish(codex), finish(wb), finish(mg)];
 	const sum = { date, sections, tokens: 0, cost: 0, requests: 0, unpriced: false };
 	for (const s of sections) {
 		sum.tokens += s.tokens;
@@ -569,7 +699,7 @@ function buildPaper(sum, opt) {
 		if (i) { rule(); y -= 6; }
 		y += LH + 2;
 		text(xL, s.name, { bold: true, size: 13.5, ls: 1 });
-		text(xR, T.sessions(num(s.sessions), num(s.requests)), { anchor: "end", size: 11 });
+		if (s.models.length) text(xR, T.sessions(num(s.sessions), num(s.requests)), { anchor: "end", size: 11 });
 		for (const m of s.models) {
 			y += LH + 3;
 			text(xL, m.label, { bold: true });
@@ -580,7 +710,7 @@ function buildPaper(sum, opt) {
 			y += 4;
 			row(T.subtotal, num(s.tokens), s.priced ? usd(s.cost) : T.unpricedTag, { indent: false, bold: true, amountDim: !s.priced });
 		}
-		// 订阅额度：当天用满了几次（Claude），或者当天最后一次请求时已经用掉百分之几（Codex）
+		// 订阅额度：当天用满了几次（Claude），或者已经用掉百分之几（Codex 的记录里有，别家靠 Magpie 的采样）
 		for (const l of s.limits) {
 			y += 4;
 			row(T.limits[l.type], null, `× ${l.hits.length}`, { indent: false, bold: true });
@@ -592,11 +722,24 @@ function buildPaper(sum, opt) {
 		}
 		for (const q of s.quota) {
 			y += 4;
-			row(T.window(q.minutes), null, `${Math.round(q.used)}%`, { indent: false, bold: true });
-			if (q.resetsAt) {
+			const list = q.list.slice(-4);
+			row((q.label ? q.label + " " : "") + T.window(q.minutes, q.name), null, list.map((x) => `${Math.round(x.used)}%`).join(" · "), { indent: false, bold: true });
+			const at = list.map((x) => (x.resetsAt ? resetLabel(x, sum.date) : "")).filter(Boolean);
+			if (at.length) {
 				y += LH - 2;
-				text(xItem, `${T.resets} ${resetLabel(q, sum.date)}`, { size: 11 });
+				text(xItem, `${T.resets} ${at.join(" · ")}`, { size: 11 });
 			}
+		}
+		if (s.id !== "magpie" && s.quota.some((q) => q.magpie)) {
+			y += LH - 3;
+			text(xItem, T.viaMagpie, { size: 10.5, dim: true });
+		}
+		// 账户余额当天花掉多少
+		for (const e of s.extras) {
+			y += 4;
+			row(`${e.name} ${T.balance}`, null, `-${e.symbol}${e.spent.toFixed(2)}`, { indent: false, bold: true });
+			y += LH - 2;
+			text(xItem, `${T.left} ${e.symbol}${e.left.toFixed(2)}`, { size: 11 });
 		}
 	});
 	rule("double");
@@ -1209,6 +1352,7 @@ class TokenReceiptSettingTab extends PluginSettingTab {
 		textSetting(T.sClaude, "claudeDir", DEFAULT_SETTINGS.claudeDir);
 		textSetting(T.sCodex, "codexDir", DEFAULT_SETTINGS.codexDir);
 		textSetting(T.sWb, "workbuddyDir", DEFAULT_SETTINGS.workbuddyDir);
+		textSetting(T.sMagpie, "magpieDir", DEFAULT_SETTINGS.magpieDir);
 		textSetting(T.sFolder, "exportFolder", T.folderHint);
 
 		new Setting(containerEl).setName(T.sFormat[0]).setDesc(T.sFormat[1]).addDropdown((d) => d
@@ -1243,4 +1387,4 @@ class TokenReceiptSettingTab extends PluginSettingTab {
 }
 
 module.exports = TokenReceiptPlugin;
-module.exports.core = { Ledger, summarize, renderReceipt, parseClaudeLine, parseWorkBuddyLine, codexParser, hostInfo, dayStart, DEFAULT_SETTINGS, SCENE_ORDER };
+module.exports.core = { Ledger, summarize, renderReceipt, parseClaudeLine, parseWorkBuddyLine, codexParser, parseMagpieLine, magpieExtras, hostInfo, dayStart, DEFAULT_SETTINGS, SCENE_ORDER };
