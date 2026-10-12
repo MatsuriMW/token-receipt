@@ -64,3 +64,17 @@
 .token-receipt-prices textarea.is-invalid {
 	border-color: var(--text-error);
 }
+
+.token-receipt-bar {
+	flex-wrap: wrap;
+}
+
+.token-receipt-bar .token-receipt-scene {
+	height: 26px;
+	margin-left: 4px;
+	font-size: var(--font-ui-small);
+}
+
+.token-receipt-stage svg {
+	cursor: zoom-in;
+}
