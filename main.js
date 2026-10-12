@@ -6,8 +6,8 @@
 //     · Codex：~/.codex/sessions（和同级的 archived_sessions）下的 rollout-*.jsonl，取 token_count 事件里的累计值，逐条相减
 //     · WorkBuddy：~/.workbuddy/projects 下的 *.jsonl，取每次请求的 providerData.rawUsage
 //   金额：Claude 和 Codex 按 API 标价折算（订阅用户并非实付），价目表在设置里可改；WorkBuddy 只列 token
-//   订阅：Claude 的会话记录里有「额度用满」的提示和重置时间，Codex 的记录里有额度已用百分比，都印在各自那一栏；
-//         填了月费就按当月天数摊出当天实付
+//   额度：Claude 的会话记录里有「额度用满」的提示和重置时间，Codex 的记录里有额度已用百分比，都印在各自那一栏
+//   桌号 / 餐位：小票上印本机的局域网 IP 和系统版本（从系统直接读，不联网），设置里可以关
 //   场景：同一张小票可以摆进不同的场景（打印机出纸、木桌、软木板、手账、账单夹板、纯净），按俯拍静物照的样子做，带入场动效
 //   一天按本机时区的 0 点到 24 点算；界面和小票跟 Obsidian 的语言走（中文 / 英文），也可以在设置里指定
 //   命令：打开 Token 小票 / 把今天的小票存成图片 / 把今天的小票插入到光标处（快捷键自己绑）
@@ -50,8 +50,7 @@ const DEFAULT_SETTINGS = {
 	title: "",
 	language: "auto",
 	scene: "printer",
-	monthlyFee: 0,
-	codexFee: 0,
+	showHost: true,
 	exportFolder: "",
 	exportScale: 2,
 	exportFormat: "webp",
@@ -71,12 +70,11 @@ const I18N = {
 		subtotal: "小计", unpricedTag: "不计价", none: "今日无消费",
 		limits: { five_hour: "5 小时额度用满", seven_day: "周额度用满", other: "额度用满" },
 		resets: "重置",
-		total: "合计 TOKEN", apiAt: "API 折算", covered: "订阅抵扣", paid: "订阅实付",
+		total: "合计 TOKEN", apiAt: "API 折算", table: "桌号", seat: "餐位",
 		window: (min) => (min === 300 ? "5 小时额度" : min === 10080 ? "周额度" : min === 43200 ? "月额度" : `${Math.round(min / 1440)} 天额度`) + "已用",
 		scenes: { printer: "打印机出纸", desk: "木桌", cork: "软木板", tape: "手账胶带", clip: "账单夹板", plain: "纯净" },
 		saveSvg: "存成动画 SVG 放进库里", replay: "重放入场动效", zoom: "点一下放大看（会存成图片，用图片查看器打开）",
 		note: "金额按 API 标价折算，订阅用户并非实付",
-		noteFee: (fee, days) => `折算按 API 标价；实付按月费 ${fee} ÷ ${days} 天摊到当天`,
 		noteUnpriced: "标「—」的模型不在价目表里，没有计入金额",
 		thanks: "谢谢惠顾 · THANK YOU",
 		prev: "前一天", next: "后一天", today: "回到今天", refresh: "重新统计", copy: "复制成图片", save: "存成图片放进库里",
@@ -86,8 +84,7 @@ const I18N = {
 		sTitle: ["小票抬头", "印在小票最上面的那行大字，留空用默认的。"],
 		sLang: ["小票语言", "界面和小票用哪种语言。命令名称重启后生效。"], langAuto: "跟随 Obsidian",
 		sScene: ["呈现方式", "小票摆在什么场景里。存下来的图和侧边栏里看到的一样；入场动效只在侧边栏和动画 SVG 里有。"],
-		sFee: ["Claude 订阅月费（美元）", "填了就在小票上按当月天数摊出当天的订阅实付，并列出比 API 标价省了多少。填 0 不显示。"],
-		sCodexFee: ["Codex（ChatGPT）订阅月费（美元）", "和 Claude 的月费加在一起算订阅实付。没订阅就填 0。"],
+		sHost: ["印上桌号和餐位", "在单号下面印一行本机的局域网 IP（桌号）和系统版本（餐位）。从系统直接读，不联网。要把小票发给别人、又不想带这两样时关掉。"],
 		sCodex: ["Codex 会话目录", "Codex 存会话记录的地方。同级的 archived_sessions 也会一起统计。"],
 		sClaude: ["Claude Code 会话目录", "Claude Code 存会话记录的地方，~ 代表用户目录。"],
 		sWb: ["WorkBuddy 会话目录", "WorkBuddy 存会话记录的地方。"],
@@ -109,12 +106,11 @@ const I18N = {
 		subtotal: "Subtotal", unpricedTag: "not priced", none: "No usage",
 		limits: { five_hour: "5-hour limit hit", seven_day: "Weekly limit hit", other: "Usage limit hit" },
 		resets: "resets",
-		total: "TOTAL TOKENS", apiAt: "At API rates", covered: "Covered by plan", paid: "You paid",
+		total: "TOTAL TOKENS", apiAt: "At API rates", table: "Table", seat: "Seat",
 		window: (min) => (min === 300 ? "5-hour limit" : min === 10080 ? "Weekly limit" : min === 43200 ? "Monthly limit" : `${Math.round(min / 1440)}-day limit`) + " used",
 		scenes: { printer: "Thermal printer", desk: "Wooden desk", cork: "Cork board", tape: "Notebook and tape", clip: "Clipboard", plain: "Plain" },
 		saveSvg: "Save as animated SVG in the vault", replay: "Replay the entrance", zoom: "Click to enlarge (saves the image and opens it in the image viewer)",
 		note: "Amounts are API list prices, not what a plan costs",
-		noteFee: (fee, days) => `API list prices; paid = ${fee} plan ÷ ${days} days`,
 		noteUnpriced: "Models marked — are not in the price table",
 		thanks: "THANK YOU · COME AGAIN",
 		prev: "Previous day", next: "Next day", today: "Back to today", refresh: "Recount", copy: "Copy as image", save: "Save as an image in the vault",
@@ -124,8 +120,7 @@ const I18N = {
 		sTitle: ["Receipt title", "The big line at the top of the receipt. Leave empty for the default."],
 		sLang: ["Receipt language", "Language of the interface and the receipt. Command names change after a restart."], langAuto: "Same as Obsidian",
 		sScene: ["Scene", "Where the receipt is shown. Saved images look like the sidebar; the entrance animation plays in the sidebar and in animated SVG files."],
-		sFee: ["Claude plan fee per month (USD)", "When set, the receipt shows what the day cost you on your plan (the fee divided by the days in the month) and how much that saves against API prices. 0 hides it."],
-		sCodexFee: ["Codex (ChatGPT) plan fee per month (USD)", "Added to the Claude fee when working out what you paid. 0 if you have no plan."],
+		sHost: ["Print table and seat", "Adds a line under the receipt number with this computer's local network address (the table) and system version (the seat). Both are read from the system; nothing goes over the network. Turn it off if you share receipts and would rather leave them out."],
 		sCodex: ["Codex session folder", "Where Codex keeps its session logs. The archived_sessions folder next to it is counted too."],
 		sClaude: ["Claude Code session folder", "Where Claude Code keeps its session logs. ~ is your home folder."],
 		sWb: ["WorkBuddy session folder", "Where WorkBuddy keeps its session logs."],
@@ -473,6 +468,20 @@ function summarize(date, files, prices) {
 	return sum;
 }
 
+// 桌号和餐位：本机的局域网 IPv4（优先 en0，没连网就是 127.0.0.1）和系统版本，都是从系统直接读的
+function hostInfo() {
+	let ip = "127.0.0.1";
+	const nets = os.networkInterfaces();
+	const names = Object.keys(nets).sort((a, b) => (a === "en0" ? -1 : b === "en0" ? 1 : 0));
+	for (const n of names) {
+		const hit = (nets[n] || []).find((x) => (x.family === "IPv4" || x.family === 4) && !x.internal);
+		if (hit) { ip = hit.address; break; }
+	}
+	const name = { darwin: "macOS", win32: "Windows", linux: "Linux" }[process.platform] || process.platform;
+	const version = typeof process.getSystemVersion === "function" ? process.getSystemVersion() : os.release();
+	return { ip, system: `${name} ${version}` };
+}
+
 // ---------- 小票 ----------
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -535,6 +544,11 @@ function buildPaper(sum, opt) {
 	const now = new Date();
 	text(xL, `${T.no} #${ymd(sum.date).replace(/-/g, "")}-${String(sum.requests).padStart(4, "0")}`, { size: 11 });
 	text(xR, `${T.printed} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`, { anchor: "end", size: 11 });
+	if (opt.host) {
+		y += LH - 3;
+		text(xL, `${T.table} ${opt.host.ip}`, { size: 11 });
+		text(xR, `${T.seat} ${opt.host.system}`, { anchor: "end", size: 11 });
+	}
 	rule();
 	y += LH - 4;
 	text(xL, T.item, { size: 11 });
@@ -587,7 +601,7 @@ function buildPaper(sum, opt) {
 	});
 	rule("double");
 
-	// 合计。填了月费：按当月天数摊出当天实付，比 API 标价省下的那部分列成抵扣
+	// 合计
 	const big = { bold: true, size: 15 };
 	const bigEnd = { anchor: "end", bold: true, size: 15 };
 	y += LH + 4;
@@ -596,22 +610,9 @@ function buildPaper(sum, opt) {
 	y += LH + 5;
 	text(xL, T.apiAt, big);
 	text(xR, usd(sum.cost), bigEnd);
-	const fee = Number(opt.monthlyFee) || 0;
-	const days = new Date(sum.date.getFullYear(), sum.date.getMonth() + 1, 0).getDate();
-	if (fee > 0) {
-		const paid = fee / days;
-		if (sum.cost > paid) {
-			y += LH + 3;
-			text(xL, T.covered);
-			text(xR, "-" + usd(sum.cost - paid), { anchor: "end" });
-		}
-		y += LH + 5;
-		text(xL, T.paid, big);
-		text(xR, usd(paid), bigEnd);
-	}
 	rule();
 	y += LH - 4;
-	text(cx, fee > 0 ? T.noteFee(usd(fee), days) : T.note, { anchor: "middle", size: 10.5, dim: true });
+	text(cx, T.note, { anchor: "middle", size: 10.5, dim: true });
 	if (sum.unpriced) {
 		y += 15;
 		text(cx, T.noteUnpriced, { anchor: "middle", size: 10.5, dim: true });
@@ -1096,7 +1097,7 @@ class TokenReceiptPlugin extends Plugin {
 	async build(date, animate) {
 		const s = this.settings;
 		const sum = await this.ledger.day(date, s);
-		const opt = { title: s.title, lang: langOf(s.language), scene: s.scene, animate, monthlyFee: (Number(s.monthlyFee) || 0) + (Number(s.codexFee) || 0) };
+		const opt = { title: s.title, lang: langOf(s.language), scene: s.scene, animate, host: s.showHost ? hostInfo() : null };
 		return Object.assign({ sum }, renderReceipt(sum, opt));
 	}
 
@@ -1202,12 +1203,9 @@ class TokenReceiptSettingTab extends PluginSettingTab {
 			for (const k of SCENE_ORDER) d.addOption(k, T.scenes[k]);
 			d.setValue(s.scene).onChange(async (v) => { s.scene = v; await this.plugin.saveSettings(); });
 		});
-		const feeSetting = (label, key) => new Setting(containerEl).setName(label[0]).setDesc(label[1]).addText((t) => t
-			.setPlaceholder("0")
-			.setValue(s[key] ? String(s[key]) : "")
-			.onChange(async (v) => { s[key] = Math.max(0, parseFloat(v) || 0); await this.plugin.saveSettings(); }));
-		feeSetting(T.sFee, "monthlyFee");
-		feeSetting(T.sCodexFee, "codexFee");
+		new Setting(containerEl).setName(T.sHost[0]).setDesc(T.sHost[1]).addToggle((t) => t
+			.setValue(s.showHost)
+			.onChange(async (v) => { s.showHost = v; await this.plugin.saveSettings(); }));
 		textSetting(T.sClaude, "claudeDir", DEFAULT_SETTINGS.claudeDir);
 		textSetting(T.sCodex, "codexDir", DEFAULT_SETTINGS.codexDir);
 		textSetting(T.sWb, "workbuddyDir", DEFAULT_SETTINGS.workbuddyDir);
@@ -1245,4 +1243,4 @@ class TokenReceiptSettingTab extends PluginSettingTab {
 }
 
 module.exports = TokenReceiptPlugin;
-module.exports.core = { Ledger, summarize, renderReceipt, parseClaudeLine, parseWorkBuddyLine, codexParser, dayStart, DEFAULT_SETTINGS, SCENE_ORDER };
+module.exports.core = { Ledger, summarize, renderReceipt, parseClaudeLine, parseWorkBuddyLine, codexParser, hostInfo, dayStart, DEFAULT_SETTINGS, SCENE_ORDER };

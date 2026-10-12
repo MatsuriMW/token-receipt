@@ -16,7 +16,7 @@ That is the author's own day, as an animated SVG saved straight from the plugin.
 - **Codex**, one block per model: input, cached input and output tokens, with costs for the models in the price table.
 - **WorkBuddy**, one block per model: input, cache hit and output tokens. WorkBuddy has no public per-token price, so this block shows tokens only.
 - **Plan limits.** When Claude Code tells you that you hit your 5-hour or weekly limit, it writes that message and the reset time into the session log; the receipt lists how many times that happened and when each limit resets. Codex logs the share of your limit you have used, so its block shows that percentage as of the last request of the day.
-- **What you paid.** Set your monthly plan fees and the receipt divides them by the days in the month, shows that as the amount paid, and lists the difference from API prices as a discount line. Leave the fees at 0 to hide these lines.
+- **Table and seat.** The way a restaurant bill carries a table number, the line under the receipt number gives this computer's local network address as the table and its system version as the seat.
 - **Totals**, a barcode that encodes nothing, and a thank-you.
 
 A tool you did not use that day gets no block.
@@ -54,7 +54,7 @@ Commands, none with a default hotkey:
 ## Settings
 
 - **Receipt title**, **language** (the interface and the receipt follow Obsidian's language: Chinese for Chinese, English otherwise) and **scene**.
-- **Monthly plan fees** for Claude and for Codex (ChatGPT), in US dollars.
+- **Table and seat**, on or off.
 - **Session folders** for Claude Code, Codex and WorkBuddy, if yours are not in the default place.
 - **Image format, folder and resolution.** WebP is the default because textured scenes are several megabytes as PNG.
 - **Price table**, as JSON, in US dollars per million tokens. Prices change and new models appear; edit the table to keep up. A model that is not in the table shows tokens without a cost. The Claude prices come from Anthropic's published rates; the OpenAI ones were taken from third-party price listings, so check them against your bill.
@@ -62,6 +62,7 @@ Commands, none with a default hotkey:
 ## Privacy and file access
 
 - **Files outside your vault.** The plugin reads, and never writes, the session logs in `~/.claude/projects` (Claude Code), `~/.codex/sessions` and `~/.codex/archived_sessions` (Codex) and `~/.workbuddy/projects` (WorkBuddy). That is the only place the token counts exist, which is why the plugin needs them. It keeps only the token counts, model names, timestamps, session ids and limit information. Your prompts and the replies are never stored, shown or sent anywhere.
+- **Local address and system version.** The table and seat line shows this computer's local network address (such as 192.168.1.23) and its system version, both read from the operating system. The line appears on every image you save or copy, so turn it off in the settings if you share receipts and would rather leave it out.
 - **No network.** Nothing is sent anywhere. Costs are calculated from the price table in the settings.
 - **Desktop only**, because it reads files through Node.js.
 - The only things written to your vault are the images and SVG files you ask for.
@@ -111,7 +112,7 @@ Token 小票读取 Claude Code、Codex 和 WorkBuddy 存在本机的会话记录
 - **Codex**：每个模型一栏，列出输入、缓存读、输出的 token；价目表里有的模型会算出金额。
 - **WorkBuddy**：每个模型一栏，列出输入、缓存命中、输出的 token。WorkBuddy 没有公开的 token 单价，所以只列 token。
 - **订阅额度**：Claude Code 提示 5 小时额度或周额度用满时，会把这条提示和重置时间写进会话记录，小票列出当天用满了几次、各自几点重置。Codex 的记录里有额度已用的百分比，小票印的是当天最后一次请求时的数字。
-- **订阅实付**：填上订阅月费，小票按当月天数摊出当天实付，并把它和 API 标价的差额列成一行抵扣。月费填 0 就不显示这几行。
+- **桌号和餐位**：像餐厅账单上的桌号那样，单号下面有一行：桌号是本机的局域网 IP，餐位是系统版本。
 - **合计**、一个扫不出东西的条形码，和一句谢谢惠顾。
 
 当天没用过的工具不占版面。
@@ -149,7 +150,7 @@ Token 小票读取 Claude Code、Codex 和 WorkBuddy 存在本机的会话记录
 ## 设置
 
 - **小票抬头**、**语言**（界面和小票跟 Obsidian 的语言走：中文界面用中文，其他用英文）和**呈现方式**。
-- Claude 和 Codex（ChatGPT）各自的**订阅月费**，单位美元。
+- **桌号和餐位**这一行印不印。
 - Claude Code、Codex 和 WorkBuddy 的**会话目录**，不在默认位置时改这里。
 - **图片格式、存放文件夹和清晰度**。默认存 WebP，因为带纹理的场景存成 PNG 要好几 MB。
 - **价目表**：JSON 格式，单位是美元 / 百万 token。价格会变，新模型会出，自己改表就行。不在表里的模型只列 token、不算金额。Claude 的价格来自 Anthropic 公布的标价；OpenAI 的几个取自第三方价目汇总，请对照自己的账单核对。
@@ -157,6 +158,7 @@ Token 小票读取 Claude Code、Codex 和 WorkBuddy 存在本机的会话记录
 ## 隐私和文件访问
 
 - **读取库外文件**：插件只读、不写 `~/.claude/projects`（Claude Code）、`~/.codex/sessions` 和 `~/.codex/archived_sessions`（Codex）、`~/.workbuddy/projects`（WorkBuddy）里的会话记录。token 用量只存在这些文件里，所以必须读它们。插件只留下 token 数、模型名、时间、会话编号和额度信息；你的提问和模型的回答不会被保存、显示或发送到任何地方。
+- **本机地址和系统版本**：桌号和餐位那一行印的是本机的局域网 IP（比如 192.168.1.23）和系统版本，都是从操作系统直接读的。存下来或复制出去的图片上都会带这一行，要把小票发给别人、又不想带这两样时，在设置里关掉。
 - **不联网**：不向任何地方发送数据，金额按设置里的价目表在本机计算。
 - **仅桌面端**：读文件用的是 Node.js。
 - 写进库里的只有你主动导出的图片和 SVG。
