@@ -10,6 +10,19 @@ Token Receipt reads the session logs that Claude Code, Codex and WorkBuddy keep 
 
 That is the author's own day, as an animated SVG saved straight from the plugin.
 
+**Contents**
+
+- [What is on the receipt](#what-is-on-the-receipt)
+- [Scenes](#scenes)
+- [Using it](#using-it)
+- [Settings](#settings)
+- [Privacy and file access](#privacy-and-file-access)
+- [Limits of the numbers](#limits-of-the-numbers)
+- [Installation](#installation)
+- [Feedback and updates](#feedback-and-updates)
+- [Credits](#credits)
+- [License](#license)
+
 ## What is on the receipt
 
 - **Claude Code**, one block per model: input, output, cache read and cache write tokens, each with its cost at API list prices, plus the number of sessions and requests.
@@ -111,6 +124,18 @@ Token 小票读取 Claude Code、Codex 和 WorkBuddy 存在本机的会话记录
 <img src="images/receipt-zh.svg" alt="小票从热敏打印机里打出来" width="460">
 
 这是作者自己某一天的用量，是插件直接存出来的动画 SVG。
+
+**目录**
+
+- [小票上有什么](#小票上有什么)
+- [场景](#场景)
+- [怎么用](#怎么用)
+- [设置](#设置)
+- [隐私和文件访问](#隐私和文件访问)
+- [数字的边界](#数字的边界)
+- [安装](#安装)
+- [反馈与后续](#反馈与后续)
+- [致谢](#致谢)
 
 ## 小票上有什么
 
