@@ -84,6 +84,10 @@ Commands, none with a default hotkey:
 
 **With BRAT:** add `MatsuriMW/token-receipt`.
 
+## Feedback and updates
+
+To follow new features, send feedback or keep up with progress, follow me on Twitter: [@Matsurimywaifu](https://x.com/Matsurimywaifu).
+
 ## Credits
 
 The idea comes from [claude-receipts](https://github.com/chrishutchinson/claude-receipts) by Chris Hutchinson, which prints a receipt for each Claude Code session, on a real thermal printer if you have one. Token Receipt shares the idea and none of the code.
@@ -181,6 +185,10 @@ Token 小票读取 Claude Code、Codex 和 WorkBuddy 存在本机的会话记录
 **手动安装**：从[最新版本](https://github.com/MatsuriMW/token-receipt/releases/latest)下载 `main.js`、`manifest.json`、`styles.css`，放进 `<你的库>/.obsidian/plugins/token-receipt/`，然后启用插件。
 
 **用 BRAT**：添加 `MatsuriMW/token-receipt`。
+
+## 反馈与后续
+
+想追踪后续功能、反馈问题、关注后续进展，欢迎关注我的 Twitter：[@Matsurimywaifu](https://x.com/Matsurimywaifu)。
 
 ## 致谢
 
